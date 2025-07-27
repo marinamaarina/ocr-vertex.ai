@@ -1,51 +1,55 @@
 import streamlit as st
 import pandas as pd
 
-st.title("Análise de Extração Vertex AI")
+# Dados dos testes
+dados_teste = pd.DataFrame({
+    "Teste": ["A", "B", "C", "D", "E", "F"],
+    "Temperatura": [0.1, 0.3, 0.5, 0.7, 0.9, 1.0],
+    "Top-P": [1.0, 1.0, 0.95, 0.9, 0.8, 0.7]
+})
 
-uploaded_file = st.file_uploader("Faça upload do arquivo CSV com os dados de extração", type=["csv"])
+# Dicionário com perguntas e respostas por teste
+respostas = {
+    "A": {
+        "perguntas": ["O que é inteligência artificial?", "Como funciona o machine learning?"],
+        "respostas": ["IA é a simulação da inteligência humana por máquinas.", "Machine learning usa algoritmos que aprendem com dados."]
+    },
+    "B": {
+        "perguntas": ["O que é Python?", "Para que serve o Pandas?"],
+        "respostas": ["Python é uma linguagem de programação.", "Pandas é uma biblioteca para análise de dados."]
+    },
+    "C": {
+        "perguntas": ["O que é uma rede neural?"],
+        "respostas": ["É um modelo inspirado no cérebro humano que aprende padrões."]
+    },
+    "D": {
+        "perguntas": ["Qual a diferença entre IA e aprendizado de máquina?"],
+        "respostas": ["IA é o conceito mais amplo, aprendizado de máquina é uma aplicação da IA."]
+    },
+    "E": {
+        "perguntas": ["O que é o ChatGPT?"],
+        "respostas": ["É um modelo de linguagem treinado para gerar respostas em linguagem natural."]
+    },
+    "F": {
+        "perguntas": ["Explique o conceito de overfitting."],
+        "respostas": ["É quando um modelo aprende os dados de treino tão bem que vai mal nos dados novos."]
+    }
+}
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+# Interface Streamlit
+st.title("Visualização dos Testes")
 
-    # Renomeia as colunas para nomes mais simples/internos
-    df = df.rename(columns={
-        "Perguntas ": "Pergunta",
-        "Valor extraído": "Resposta",
-        "Correto (✓/X)": "Status",
-        "Motivo Erro / Observação": "Observação"
-    })
+# Seleção de teste
+teste_selecionado = st.selectbox("Selecione o teste:", dados_teste["Teste"])
 
-    expected_cols = ["Teste", "Temperatura", "Top-P", "Pergunta", "Resposta", "Status", "Observação"]
-    missing_cols = [col for col in expected_cols if col not in df.columns]
-    if missing_cols:
-        st.error(f"Faltam colunas no arquivo: {missing_cols}")
-    else:
-        df["Temperatura"] = df["Temperatura"].astype(float)
-        df["Top-P"] = df["Top-P"].astype(float)
+# Mostrar parâmetros do teste
+st.subheader("Parâmetros do Teste")
+teste_row = dados_teste[dados_teste["Teste"] == teste_selecionado]
+st.write(teste_row)
 
-        temperatura_filter = st.selectbox("Selecione Temperatura:", sorted(df["Temperatura"].unique()))
-        top_p_filter = st.selectbox("Selecione Top-P:", sorted(df["Top-P"].unique()))
-        pergunta_filter = st.selectbox("Selecione a Pergunta:", df["Pergunta"].unique())
-
-        filtered_df = df[
-            (df["Temperatura"] == temperatura_filter) & 
-            (df["Top-P"] == top_p_filter) & 
-            (df["Pergunta"] == pergunta_filter)
-        ]
-
-        if filtered_df.empty:
-            st.warning("Nenhum resultado para os filtros selecionados.")
-        else:
-            for idx, row in filtered_df.iterrows():
-                st.markdown(f"### Teste: {row['Teste']}")
-                st.markdown(f"**Status:** {row['Status']}")
-                st.markdown("**Resposta Extraída:**")
-                st.text(row["Resposta"])
-                st.markdown("**Observações:**")
-                st.text(row["Observação"])
-                st.markdown("---")
-else:
-    st.info("Aguarde o upload do arquivo CSV para carregar os dados.")
-
-
+# Mostrar perguntas e respostas
+st.subheader("Perguntas e Respostas")
+qa = respostas.get(teste_selecionado, {"perguntas": [], "respostas": []})
+for i, (pergunta, resposta) in enumerate(zip(qa["perguntas"], qa["respostas"]), 1):
+    st.markdown(f"**Pergunta {i}:** {pergunta}")
+    st.markdown(f"**Resposta {i}:** {resposta}")
