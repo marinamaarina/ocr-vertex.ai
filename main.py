@@ -1,119 +1,141 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from datetime import datetime
 
-# Configuração da Página
+# Configuração da página
 st.set_page_config(
-    page_title="OCR/LLM Analytics Pro",
+    page_title="Analisador OCR/LLM",
     layout="wide",
-    page_icon="📊"
+    page_icon="🧠"
 )
 
-# CSS Personalizado
+# CSS personalizado
 st.markdown("""
 <style>
-    .metric-card {
-        background: white;
+    .error { background-color: #ffcccc; border-left: 4px solid #ff0000; padding: 8px; }
+    .warning { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 8px; }
+    .success { background-color: #d4edda; border-left: 4px solid #28a745; padding: 8px; }
+    .metric-box {
+        background: #f8f9fa;
         border-radius: 10px;
         padding: 15px;
         margin-bottom: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .error-highlight {
-        background-color: #ffdddd;
-        border-left: 3px solid #ff0000;
-        padding: 5px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_data
 def load_data(file):
-    """Carrega dados com tratamento robusto"""
+    """Carrega dados do arquivo CSV ou Excel"""
     try:
-        df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-        
-        # Conversão segura de datas
-        if 'Data' in df.columns:
-            df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
-            df = df.dropna(subset=['Data'])
-        
-        return df
+        if file.name.endswith('.csv'):
+            return pd.read_csv(file, encoding='utf-8')
+        return pd.read_excel(file)
     except Exception as e:
-        st.error(f"Erro na carga de dados: {str(e)}")
+        st.error(f"Erro ao carregar: {str(e)}")
         return None
 
-def safe_date_filter(df, date_col, date_range):
-    """Filtro temporal com tratamento de erros"""
-    try:
-        if date_col in df.columns:
-            mask = (df[date_col].dt.date >= date_range[0]) & (df[date_col].dt.date <= date_range[1])
-            return df[mask]
-        return df
-    except Exception:
-        return df
+def apply_style(val, status):
+    """Aplica estilo condicional baseado no status"""
+    if pd.isna(status): return val
+    if 'incorreto' in str(status).lower(): return f'<div class="error">{val}</div>'
+    if 'parcial' in str(status).lower(): return f'<div class="warning">{val}</div>'
+    if 'correto' in str(status).lower(): return f'<div class="success">{val}</div>'
+    return val
 
-# Interface Principal
-st.title("📊 OCR/LLM Analytics Pro")
+# Interface principal
+st.title("🧠 Analisador de Testes OCR/LLM")
+st.caption("Relatório completo de validação dos testes")
 
-uploaded_file = st.file_uploader("Carregue seu arquivo de resultados", type=['csv', 'xlsx'])
+# Upload do arquivo
+uploaded_file = st.file_uploader("Suba seu arquivo (CSV ou Excel)", type=['csv','xlsx'])
 
 if uploaded_file:
     df = load_data(uploaded_file)
     
     if df is not None:
-        # Filtros na Sidebar
-        st.sidebar.header("Filtros")
+        # Sidebar - Filtros
+        st.sidebar.header("⚙️ Filtros")
         
-        # Filtro Temporal Seguro
-        if 'Data' in df.columns:
-            min_date = df['Data'].min().date()
-            max_date = df['Data'].max().date()
-            
-            try:
-                date_range = st.sidebar.date_input(
-                    "Período",
-                    value=(min_date, max_date),
-                    min_value=min_date,
-                    max_value=max_date
-                )
-                
-                if len(date_range) == 2:
-                    df = safe_date_filter(df, 'Data', date_range)
-            except Exception as e:
-                st.sidebar.warning("Erro no filtro de data. Mostrando todos os dados.")
+        # Filtros dinâmicos
+        filters = {}
+        for col in ['Teste', 'Perguntas', 'Status']:
+            if col in df.columns:
+                options = ["Todos"] + sorted(df[col].dropna().unique())
+                selected = st.sidebar.selectbox(f"Filtrar por {col}", options)
+                if selected != "Todos":
+                    filters[col] = selected
         
-        # Outros Filtros
-        if 'Status' in df.columns:
-            status_options = df['Status'].unique()
-            selected_status = st.sidebar.multiselect(
-                "Status",
-                options=status_options,
-                default=status_options
-            )
-            df = df[df['Status'].isin(selected_status)]
+        # Aplicar filtros
+        filtered_df = df.copy()
+        for col, val in filters.items():
+            filtered_df = filtered_df[filtered_df[col] == val]
         
-        # Visualização dos Dados
-        st.dataframe(
-            df.style.applymap(
-                lambda x: 'background-color: #ffdddd' if 'incorreto' in str(x).lower() else '',
-                subset=['Status']
-            ),
-            height=600,
-            use_container_width=True
-        )
+        # Métricas (3 colunas)
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown('<div class="metric-box"><b>Total de Testes</b><br><h3>{}</h3></div>'.format(
+                len(df)), unsafe_allow_html=True)
+        
+        with col2:
+            if 'Status' in df.columns:
+                correct = len(df[df['Status'].str.contains('correto', case=False, na=False)])
+                st.markdown('<div class="metric-box"><b>Corretos</b><br><h3>{} ({:.0f}%)</h3></div>'.format(
+                    correct, (correct/len(df))*100), unsafe_allow_html=True)
+        
+        with col3:
+            if 'Status' in df.columns:
+                issues = len(df[~df['Status'].str.contains('correto', case=False, na=False)])
+                st.markdown('<div class="metric-box"><b>Com problemas</b><br><h3>{} ({:.0f}%)</h3></div>'.format(
+                    issues, (issues/len(df))*100), unsafe_allow_html=True)
 
-        # Botão de Exportação
-        output = BytesIO()
-        df.to_excel(output, index=False)
-        st.download_button(
-            label="Exportar para Excel",
-            data=output.getvalue(),
-            file_name="resultados_analise.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        # Tabela interativa
+        st.subheader("📊 Resultados Detalhados")
+        
+        if not filtered_df.empty:
+            # Aplicar estilos
+            styled_df = filtered_df.copy()
+            if 'Status' in df.columns:
+                for col in ['Valor extraído', 'Motivo Erro / Observação']:
+                    if col in styled_df.columns:
+                        styled_df[col] = styled_df.apply(
+                            lambda x: apply_style(x[col], x['Status']), axis=1)
+            
+            # Mostrar tabela
+            st.markdown(styled_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+            
+            # Botão de download
+            excel_buffer = BytesIO()
+            filtered_df.to_excel(excel_buffer, index=False)
+            st.download_button(
+                label="⬇️ Exportar para Excel",
+                data=excel_buffer.getvalue(),
+                file_name="resultados_analise.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.warning("Nenhum resultado encontrado com os filtros atuais")
+
+        # Análise de erros (se aplicável)
+        if 'Status' in df.columns and 'Motivo Erro / Observação' in df.columns:
+            errors = df[~df['Status'].str.contains('correto', case=False, na=False)]
+            if not errors.empty:
+                st.subheader("🔍 Análise Detalhada de Problemas")
+                
+                for idx, row in errors.iterrows():
+                    with st.expander(f"{row.get('Perguntas', 'Pergunta')} - {row.get('Status', 'Status')}", False):
+                        cols = st.columns([1,2])
+                        with cols[0]:
+                            st.markdown("**Valor Extraído:**")
+                            st.write(row.get('Valor extraído', ''))
+                        with cols[1]:
+                            st.markdown("**Problema Identificado:**")
+                            st.write(row.get('Motivo Erro / Observação', 'Sem detalhes'))
+else:
+    st.info("👉 Por favor, faça upload do arquivo de resultados para iniciar a análise")
 
 # Rodapé
 st.markdown("---")
-st.caption("Relatório gerado em: " + datetime.now().strftime("%d/%m/%Y %H:%M"))
+st.caption("Relatório gerado automaticamente - © 2023 Análise OCR/LLM")
