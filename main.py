@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from io import BytesIO
 
 # Configurações da página
@@ -15,26 +14,19 @@ st.markdown("""
 <style>
     .highlight-red {
         background-color: #ffcccc;
+        padding: 2px;
+        border-radius: 4px;
     }
     .highlight-orange {
         background-color: #ffe6cc;
-    }
-    .highlight-blue {
-        background-color: #cce0ff;
+        padding: 2px;
+        border-radius: 4px;
     }
     .metric-card {
+        background-color: #f0f2f6;
         padding: 15px;
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         margin-bottom: 15px;
-    }
-    .metric-title {
-        font-size: 14px;
-        color: #666;
-    }
-    .metric-value {
-        font-size: 24px;
-        font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -44,7 +36,7 @@ st.markdown("""
 def load_data(uploaded_file):
     try:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file, encoding='utf-8')
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(uploaded_file)
         else:
@@ -52,8 +44,8 @@ def load_data(uploaded_file):
             return None
         
         # Limpeza básica dos dados
-        df['Correto (✓/X)'] = df['Correto (✓/X)'].str.strip()
-        df['Teste'] = df['Teste'].astype(str)
+        if 'Correto (✓/X)' in df.columns:
+            df['Status'] = df['Correto (✓/X)'].str.strip()
         return df
     
     except Exception as e:
@@ -61,31 +53,23 @@ def load_data(uploaded_file):
         return None
 
 # Função para aplicar destaque
-def highlight_errors(row):
-    status = row['Correto (✓/X)']
-    styles = [''] * len(row)
-    
+def highlight_text(text, status):
     if pd.isna(status):
-        return styles
-    
-    if 'Incorreto' in status or 'Errado' in status:
-        styles = ['background-color: #ffcccc'] * len(row)  # Vermelho
-    elif 'Parcialmente' in status:
-        styles = ['background-color: #ffe6cc'] * len(row)  # Laranja
-    elif 'Não extraiu' in status:
-        styles = ['background-color: #cce0ff'] * len(row)  # Azul
-    
-    return styles
+        return text
+    if 'Incorreto' in str(status) or 'Errado' in str(status):
+        return f'<span class="highlight-red">{text}</span>'
+    elif 'Parcialmente' in str(status):
+        return f'<span class="highlight-orange">{text}</span>'
+    return text
 
 # Interface principal
-st.title("🔍 Análise de Testes OCR + LLM (Vertex AI)")
-st.markdown("Visualização interativa dos resultados dos testes de extração de dados")
+st.title("🔍 Análise de Testes OCR + LLM")
+st.markdown("Visualização dos resultados sem uso do Plotly")
 
 # Upload de arquivo
 uploaded_file = st.file_uploader(
     "📤 Carregue o arquivo de resultados (CSV ou Excel)",
-    type=['csv', 'xlsx', 'xls'],
-    key="file_uploader"
+    type=['csv', 'xlsx', 'xls']
 )
 
 if uploaded_file is not None:
@@ -96,167 +80,89 @@ if uploaded_file is not None:
         st.sidebar.header("🔍 Filtros")
         
         # Filtro por teste
-        test_options = ["Todos"] + sorted(df['Teste'].unique())
-        selected_test = st.sidebar.selectbox("Teste", test_options)
+        if 'Teste' in df.columns:
+            test_options = ["Todos"] + sorted(df['Teste'].unique())
+            selected_test = st.sidebar.selectbox("Teste", test_options)
         
         # Filtro por pergunta
-        question_options = ["Todos"] + sorted(df['Perguntas '].dropna().unique())
-        selected_question = st.sidebar.selectbox("Pergunta", question_options)
+        if 'Perguntas ' in df.columns:
+            question_options = ["Todos"] + sorted(df['Perguntas '].dropna().unique())
+            selected_question = st.sidebar.selectbox("Pergunta", question_options)
         
         # Filtro por status
-        status_options = ["Todos"] + sorted(df['Correto (✓/X)'].dropna().unique())
-        selected_status = st.sidebar.selectbox("Status", status_options)
-        
-        # Filtro por temperatura
-        temp_min, temp_max = st.sidebar.slider(
-            "Intervalo de Temperatura",
-            min_value=float(df['Temperatura'].min()),
-            max_value=float(df['Temperatura'].max()),
-            value=(float(df['Temperatura'].min()), float(df['Temperatura'].max()))
-        )
+        if 'Status' in df.columns:
+            status_options = ["Todos"] + sorted(df['Status'].dropna().unique())
+            selected_status = st.sidebar.selectbox("Status", status_options)
         
         # Aplicar filtros
         filtered_df = df.copy()
-        if selected_test != "Todos":
+        if 'Teste' in df.columns and selected_test != "Todos":
             filtered_df = filtered_df[filtered_df['Teste'] == selected_test]
-        if selected_question != "Todos":
+        if 'Perguntas ' in df.columns and selected_question != "Todos":
             filtered_df = filtered_df[filtered_df['Perguntas '] == selected_question]
-        if selected_status != "Todos":
-            filtered_df = filtered_df[filtered_df['Correto (✓/X)'] == selected_status]
-        filtered_df = filtered_df[
-            (filtered_df['Temperatura'] >= temp_min) & 
-            (filtered_df['Temperatura'] <= temp_max)
-        ]
-        
+        if 'Status' in df.columns and selected_status != "Todos":
+            filtered_df = filtered_df[filtered_df['Status'] == selected_status]
+
         # Métricas principais
         st.header("📊 Métricas Gerais")
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.markdown('<div class="metric-card"><div class="metric-title">Total de Testes</div><div class="metric-value">{}</div></div>'.format(
+            st.markdown('<div class="metric-card"><b>Total de Testes</b><br>{}<div>'.format(
                 len(df)), unsafe_allow_html=True)
         
         with col2:
-            correct = len(df[df['Correto (✓/X)'] == 'Correto'])
-            st.markdown('<div class="metric-card"><div class="metric-title">Corretos</div><div class="metric-value" style="color: #2ecc71;">{} ({:.1f}%)</div></div>'.format(
-                correct, (correct/len(df))*100), unsafe_allow_html=True)
+            if 'Status' in df.columns:
+                correct = len(df[df['Status'] == 'Correto'])
+                st.markdown('<div class="metric-card"><b>Corretos</b><br>{} ({:.1f}%)<div>'.format(
+                    correct, (correct/len(df))*100), unsafe_allow_html=True)
         
         with col3:
-            partial = len(df[df['Correto (✓/X)'].str.contains('Parcialmente', na=False)])
-            st.markdown('<div class="metric-card"><div class="metric-title">Parciais</div><div class="metric-value" style="color: #f39c12;">{} ({:.1f}%)</div></div>'.format(
-                partial, (partial/len(df))*100), unsafe_allow_html=True)
-        
-        with col4:
-            incorrect = len(df[df['Correto (✓/X)'].str.contains('Incorreto|Errado', na=False)])
-            st.markdown('<div class="metric-card"><div class="metric-title">Incorretos</div><div class="metric-value" style="color: #e74c3c;">{} ({:.1f}%)</div></div>'.format(
-                incorrect, (incorrect/len(df))*100), unsafe_allow_html=True)
-        
-        # Visualizações
-        st.header("📈 Visualizações")
-        
-        tab1, tab2, tab3 = st.tabs(["Distribuição por Status", "Desempenho por Pergunta", "Efeito da Temperatura"])
-        
-        with tab1:
-            fig1 = px.pie(
-                df, 
-                names='Correto (✓/X)', 
-                title='Distribuição dos Resultados por Status',
-                color_discrete_map={
-                    'Correto': '#2ecc71',
-                    'Parcialmente': '#f39c12',
-                    'Incorreto': '#e74c3c',
-                    'Errado': '#e74c3c',
-                    'Não extraiu': '#3498db'
-                }
-            )
-            st.plotly_chart(fig1, use_container_width=True)
-        
-        with tab2:
-            fig2 = px.bar(
-                df.groupby(['Perguntas ', 'Correto (✓/X)']).size().reset_index(name='Contagem'),
-                x='Perguntas ',
-                y='Contagem',
-                color='Correto (✓/X)',
-                title='Desempenho por Tipo de Pergunta',
-                color_discrete_map={
-                    'Correto': '#2ecc71',
-                    'Parcialmente': '#f39c12',
-                    'Incorreto': '#e74c3c',
-                    'Errado': '#e74c3c',
-                    'Não extraiu': '#3498db'
-                }
-            )
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        with tab3:
-            fig3 = px.scatter(
-                df,
-                x='Temperatura',
-                y='Top-P',
-                color='Correto (✓/X)',
-                title='Desempenho por Configuração de Temperatura e Top-P',
-                color_discrete_map={
-                    'Correto': '#2ecc71',
-                    'Parcialmente': '#f39c12',
-                    'Incorreto': '#e74c3c',
-                    'Errado': '#e74c3c',
-                    'Não extraiu': '#3498db'
-                }
-            )
-            st.plotly_chart(fig3, use_container_width=True)
-        
-        # Tabela de resultados
+            if 'Status' in df.columns:
+                errors = len(df[df['Status'].str.contains('Incorreto|Errado|Parcialmente', na=False)])
+                st.markdown('<div class="metric-card"><b>Com problemas</b><br>{} ({:.1f}%)<div>'.format(
+                    errors, (errors/len(df))*100), unsafe_allow_html=True)
+
+        # Visualização de dados alternativa
         st.header("📋 Resultados Detalhados")
         
-        # Aplicar destaque
-        styled_df = filtered_df.style.apply(highlight_errors, axis=1)
-        
-        # Mostrar tabela
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            height=600,
-            column_config={
-                "Valor extraído": st.column_config.TextColumn(width="large"),
-                "Motivo Erro / Observação": st.column_config.TextColumn(width="large")
-            }
-        )
-        
+        # Mostrar tabela com destaque
+        if not filtered_df.empty:
+            # Aplicar formatação HTML
+            formatted_df = filtered_df.copy()
+            if 'Status' in df.columns:
+                for col in formatted_df.columns:
+                    if formatted_df[col].dtype == 'object':
+                        formatted_df[col] = formatted_df.apply(
+                            lambda x: highlight_text(str(x[col]), x['Status']), axis=1)
+            
+            st.markdown(formatted_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        else:
+            st.warning("Nenhum resultado encontrado com os filtros selecionados")
+
         # Análise de erros
-        if len(filtered_df[filtered_df['Correto (✓/X)'].str.contains('Incorreto|Parcialmente|Errado', na=False)]) > 0:
-            st.header("🔴 Análise de Erros")
-            
-            errors_df = filtered_df[
-                filtered_df['Correto (✓/X)'].str.contains('Incorreto|Parcialmente|Errado', na=False)
-            ][['Perguntas ', 'Valor extraído', 'Motivo Erro / Observação']]
-            
-            for idx, row in errors_df.iterrows():
-                with st.expander(f"Erro em: {row['Perguntas ']}", expanded=False):
-                    st.markdown(f"**Valor extraído:**\n\n{row['Valor extraído']}")
-                    st.markdown(f"**Problema identificado:**\n\n{row['Motivo Erro / Observação']}")
-        
+        if 'Status' in df.columns and 'Motivo Erro / Observação' in df.columns:
+            error_df = df[df['Status'].str.contains('Incorreto|Errado|Parcialmente', na=False)]
+            if not error_df.empty:
+                st.header("🔴 Análise de Erros")
+                
+                for idx, row in error_df.iterrows():
+                    with st.expander(f"Problema em: {row.get('Perguntas ', '')}", expanded=False):
+                        st.markdown(f"**Valor extraído:**\n\n{row.get('Valor extraído', '')}")
+                        st.markdown(f"**Problema:**\n\n{row.get('Motivo Erro / Observação', '')}")
+
         # Botão para download
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             filtered_df.to_excel(writer, index=False)
         
         st.download_button(
-            label="📥 Baixar Resultados Filtrados (Excel)",
+            label="📥 Baixar Resultados Filtrados",
             data=output.getvalue(),
             file_name="resultados_filtrados.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         
 else:
-    st.info("ℹ️ Por favor, carregue o arquivo de resultados para começar a análise.")
-    st.markdown("""
-    ### Exemplo de estrutura esperada:
-    - Coluna `Teste`: Identificador do teste (A, B, C, etc.)
-    - Coluna `Temperatura`: Valor de temperatura usado no teste
-    - Coluna `Top-P`: Valor de Top-P usado no teste
-    - Coluna `Perguntas`: Tipo de pergunta/extração realizada
-    - Coluna `Valor extraído`: Resultado da extração
-    - Coluna `Correto (✓/X)`: Status do resultado (Correto, Parcialmente, Incorreto, etc.)
-    - Coluna `Motivo Erro / Observação`: Detalhes sobre os erros encontrados
-    """)
+    st.info("ℹ️ Por favor, carregue o arquivo de resultados para começar.")
