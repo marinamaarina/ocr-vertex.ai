@@ -1,65 +1,48 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Validação Vertex AI", layout="wide")
+st.title("Análise de Extração Vertex AI")
 
-st.title("🧪 Análise de Extração - Vertex AI")
-st.markdown("**Responsável:** Marina &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Configuração: Temperatura 0.1 | Top-P 1.0")
+uploaded_file = st.file_uploader("Faça upload do arquivo CSV com os dados de extração", type=["csv"])
 
-# 📁 Upload do Arquivo
-uploaded_file = st.file_uploader("📤 Faça upload do documento para análise", type=["pdf", "docx", "txt"])
+if uploaded_file is not None:
+    # Lê o CSV
+    df = pd.read_csv(uploaded_file)
 
-if uploaded_file:
-    st.success("Arquivo carregado com sucesso!")
-    # Aqui você pode incluir a lógica de leitura do conteúdo
-    # Para demonstração, vamos usar resultados simulados
+    # Conferir se as colunas existem
+    expected_cols = ["Teste", "Temperatura", "Top-P", "Pergunta", "Resposta", "Status", "Observação"]
+    missing_cols = [col for col in expected_cols if col not in df.columns]
+    if missing_cols:
+        st.error(f"Faltam colunas no arquivo: {missing_cols}")
+    else:
+        # Converter Temperatura e Top-P para float (ajusta se precisar)
+        df["Temperatura"] = df["Temperatura"].astype(float)
+        df["Top-P"] = df["Top-P"].astype(float)
 
-    st.subheader("📋 Tabela de Resultados")
-    data = {
-        "Pergunta": [
-            "Nome do comprador?",
-            "CPF ou CNPJ do comprador?",
-            "Membros societários compradores?",
-            "Nome do vendedor?",
-            "Membros societários vendedores?",
-            "CPF ou CNPJ do vendedor?"
-        ],
-        "Valor Extraído": [
-            "Mistura nomes de membros dos vendedores",
-            "Informações mistas e erradas",
-            "Repetição de nome da empresa RGZS",
-            "RGZS CENTENÁRIO DE EMPREENDIMENTOS LTDA.",
-            "RGZS e CNPJs repetidos",
-            "CNPJs da empresa RGZS"
-        ],
-        "Avaliação": [
-            "❌ Parcial",
-            "❌ Incorreto",
-            "❌ Incorreto",
-            "⚠️ Parcial",
-            "❌ Incorreto",
-            "❌ Incorreto"
+        # Filtros
+        temperatura_filter = st.selectbox("Selecione Temperatura:", sorted(df["Temperatura"].unique()))
+        top_p_filter = st.selectbox("Selecione Top-P:", sorted(df["Top-P"].unique()))
+        pergunta_filter = st.selectbox("Selecione a Pergunta:", df["Pergunta"].unique())
+
+        # Filtra o dataframe
+        filtered_df = df[
+            (df["Temperatura"] == temperatura_filter) & 
+            (df["Top-P"] == top_p_filter) & 
+            (df["Pergunta"] == pergunta_filter)
         ]
-    }
 
-    df = pd.DataFrame(data)
-    st.dataframe(df, use_container_width=True)
+        if filtered_df.empty:
+            st.warning("Nenhum resultado para os filtros selecionados.")
+        else:
+            for idx, row in filtered_df.iterrows():
+                st.markdown(f"### Teste: {row['Teste']}")
+                st.markdown(f"**Status:** {row['Status']}")
+                st.markdown(f"**Resposta Extraída:**")
+                st.text(row["Resposta"])
+                st.markdown(f"**Observações:**")
+                st.text(row["Observação"])
+                st.markdown("---")
 
-    st.subheader("🔴 Painel de Erros")
-    st.markdown("""
-    <div style='background-color:#ffe6e6; padding:15px; border-radius:10px'>
-    <b>⚠️ Principais falhas:</b><br>
-    • Confusão entre compradores e vendedores.<br>
-    • Membros societários não identificados.<br>
-    • Dados pessoais e empresariais misturados.<br>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.subheader("✅ Recomendações")
-    st.markdown("""
-    - Ajustar o prompt de extração com instruções mais claras.  
-    - Testar com outras configurações de temperatura.  
-    - Usar documentos variados para teste de consistência.  
-    """)
 else:
-    st.info("Por favor, envie um arquivo para iniciar a análise.")
+    st.info("Aguarde o upload do arquivo CSV para carregar os dados.")
+
